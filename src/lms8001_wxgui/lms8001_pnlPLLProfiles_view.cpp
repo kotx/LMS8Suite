@@ -543,7 +543,10 @@ void lms8001_pnlPLLProfiles_view::OnSmartTuneClick(wxCommandEvent& event)
 
 	int flock_N = cmbFLOCK_N_n->GetValue();
 
-	liblms8_status status = configPLL(fLO, fref, slfbenXBUF, genIQ, intMode, loopBW, pm, fitKVCO, bwef, flock_N);
+	// pavlej 26.02.2025.
+	// calling function optimized for IC from MPW 2024.
+	//liblms8_status status = configPLL(fLO, fref, slfbenXBUF, genIQ, intMode, loopBW, pm, fitKVCO, bwef, flock_N);
+	liblms8_status status = configPLL_mpw2024(fLO, fref, slfbenXBUF, genIQ, intMode, loopBW, pm, fitKVCO, bwef, flock_N);
 
 	// Setup (enable or disable) quadrature generation
 	lmsControl->Modify_SPI_Reg_bits(PLL_LODIST_FSP_OUT02_n, !genIQ, true, lmsControl->channel, lmsControl->PLLprofile);
@@ -566,8 +569,10 @@ This method does complete configuration of LMS8001 IC PLL in 5 steps:
 3. Optimizes PLL configuration for targeted LoopBW and Phase Margin(PM)
 4. Optimize CP offset current and Lock - Detector threashold settings depending on chosen PLL operating mode
 5. Sets Fast - Lock Settings
+Works for LMS8001 IC from 2015 MPW.
+pavlej 26.02.2025.
 ****************************************************************************************************************/
-liblms8_status lms8001_pnlPLLProfiles_view::configPLL(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode, int loopBW, double pm, bool fitKVCO, double bwef, int flock_N)
+liblms8_status lms8001_pnlPLLProfiles_view::configPLL_mpw2015(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode, int loopBW, double pm, bool fitKVCO, double bwef, int flock_N)
 {
 	liblms8_status status, status1, status2, status3, status4, status5;
 
@@ -582,7 +587,7 @@ liblms8_status lms8001_pnlPLLProfiles_view::configPLL(double fLO, int fref, bool
 	lmsControl->Modify_SPI_Reg_bits(VCO_AAC_EN_n, 1, true, lmsControl->channel, lmsControl->PLLprofile);
 
 	// Step 1 - Tune PLL to generate F_LO frequency at LODIST outputs that should be manualy enabled outside this method
-	status1 = setLOFREQ(fLO, fref, slfbenXBUF, genIQ, intMode);
+	status1 = setLOFREQ_mpw2015(fLO, fref, slfbenXBUF, genIQ, intMode);
 
 	if (status1 != LIBLMS8_SUCCESS) {
 		wxCommandEvent evt;
@@ -611,7 +616,87 @@ liblms8_status lms8001_pnlPLLProfiles_view::configPLL(double fLO, int fref, bool
 	}
 
 	// Step 3 - Optimize PLL settings for targeted LoopBW
-	status3 = optim_PLL_LoopBW(pm, fc, fitKVCO);
+	status3 = optim_PLL_LoopBW_mpw2015(pm, fc, fitKVCO);
+
+	if (status3 != LIBLMS8_SUCCESS) {
+		wxCommandEvent evt;
+		evt.SetEventType(LOG_MESSAGE);
+		char message[512];
+		sprintf(message, "Optimization of PLL at F_LO=%.2f GHz, LoopBW=%.2f kHz and PM=%.2f deg failed.", fLO/1.0e9, loopBW/1.0e3, pm);
+		evt.SetString(_(message));
+		wxPostEvent(this, evt);
+
+		status = LIBLMS8_FAILURE;
+	}
+
+	// Step 4 - Optimize CP offset current Lock Detector Threashold depending on operating mode chosen(IntN or FracN)
+	status4 = optimCPandLD();
+
+	// Step 5 - Configure Fast - Lock Mode Registers
+	status5 = setFLOCK(bwef, flock_N);
+
+	return status;
+}
+
+
+/***************************************************************************************************************
+This method does complete configuration of LMS8001 IC PLL in 5 steps:
+1. Runs VCO Coarse Frequency Tuning and Sets FF - DIV Ratios needed for generation of F_LO frequency
+2. Centers VCO VTUNE voltage if needed
+3. Optimizes PLL configuration for targeted LoopBW and Phase Margin(PM)
+4. Optimize CP offset current and Lock - Detector threashold settings depending on chosen PLL operating mode
+5. Sets Fast - Lock Settings
+Works for LMS8001 IC from 2024 MPW.
+pavlej 26.02.2025.
+****************************************************************************************************************/
+liblms8_status lms8001_pnlPLLProfiles_view::configPLL_mpw2024(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode, int loopBW, double pm, bool fitKVCO, double bwef, int flock_N)
+{
+	liblms8_status status, status1, status2, status3, status4, status5;
+
+	status = LIBLMS8_SUCCESS;
+
+	// Calculate Loop - Crossover frequency
+	double fc = loopBW / 1.65;
+
+	// Set optimal VCO settings
+	// pavlej 26.02.2025., comment on the next 2 lines, to easier test the VCO_AMP effect on phase-noise
+	//lmsControl->Modify_SPI_Reg_bits(VDIV_SWVDD_n, 2, true, lmsControl->channel, lmsControl->PLLprofile);
+	//lmsControl->Modify_SPI_Reg_bits(VCO_AMP_n, 3, true, lmsControl->channel, lmsControl->PLLprofile);
+	lmsControl->Modify_SPI_Reg_bits(VCO_AAC_EN_n, 1, true, lmsControl->channel, lmsControl->PLLprofile);
+
+	// Step 1 - Tune PLL to generate F_LO frequency at LODIST outputs that should be manualy enabled outside this method
+	status1 = setLOFREQ_mpw2024(fLO, fref, slfbenXBUF, genIQ, intMode);
+
+	if (status1 != LIBLMS8_SUCCESS) {
+		wxCommandEvent evt;
+		evt.SetEventType(LOG_MESSAGE);
+		char message[512];
+		sprintf(message, "PLL Tuning to F_LO=%.2f GHz failed.", fLO/1.0E9);
+		evt.SetString(_(message));
+		wxPostEvent(this, evt);
+
+		return status1;
+//		status = LIBLMS8_FAILURE;
+	}
+
+	// pavlej 26.02.2025., issue fixed for mpw 2024., no need for re-centering of VTUNE step, commenting
+	// Step 2 - Center VCO Tuning Voltage if needed
+	//status2 = centerVTUNE2(fref, slfbenXBUF);
+	status2 = LIBLMS8_SUCCESS;
+	if (status2 != LIBLMS8_SUCCESS) {
+		wxCommandEvent evt;
+		evt.SetEventType(LOG_MESSAGE);
+		char message[512];
+		sprintf(message, "Centering VTUNE at F_LO=%.2f GHz failed.", fLO / 1.0E9);
+		evt.SetString(_(message));
+		wxPostEvent(this, evt);
+
+		status = LIBLMS8_FAILURE;
+	}
+
+	// Step 3 - Optimize PLL settings for targeted LoopBW
+	// different fitting KVCO equations due to the VCO cores redesign for MPW2024
+	status3 = optim_PLL_LoopBW_mpw2024(pm, fc, fitKVCO);
 
 	if (status3 != LIBLMS8_SUCCESS) {
 		wxCommandEvent evt;
@@ -690,14 +775,20 @@ liblms8_status lms8001_pnlPLLProfiles_view::optimCPandLD()
 	if (INTMOD_EN) {
 		// Set Offset Current and Lock Detector Threashold for IntN - Operating Mode
 		LD_VCT = 2;
-		OFS = 0;
+		//OFS = 0;
+		// pavlej 29.09.2025. - based on measurements data
+		double Icp = (25.0*ICT_CP / 16.0)*PULSE;
+		double Icp_OFS = 1.2/100.0*Icp; // pavlej 29.09.2025. - based on measurements data
+		double Icp_OFS_step = (25.0*ICT_CP / 16.0)*0.25;
+		OFS = int(round(Icp_OFS/Icp_OFS_step));
 	}
 	else {
 		// Set Offset Current and Lock Detector Threashold for IntN - Operating Mode
 		LD_VCT = 0;
 		double Icp = (25.0*ICT_CP / 16.0)*PULSE;
 		// Calculate Target Value for Offset Current, as 3 % of Pulse current value
-		double Icp_OFS = 0.03*Icp;
+		// double Icp_OFS = 0.03*Icp;
+		double Icp_OFS = 1.9/100.0*Icp; // pavlej 29.09.2025. - based on measurements data
 		double Icp_OFS_step = (25.0*ICT_CP / 16.0)*0.25;
 		OFS = max(1, int(Icp_OFS / Icp_OFS_step));
 	}
@@ -729,8 +820,10 @@ void lms8001_pnlPLLProfiles_view::setLD(int LD_VCT)
 This method finds optimal PLL configuration, CP pulse current and LPF element values.
 Optimization finds maximal CP current which can results with targeted PLL Loop BW using Loop - Filter elements which can be implemented in LMS8001 IC.
 Result should be PLL configuration with best phase noise performance for targeted loop bandwidth.
+Works for LMS8001 IC from 2015 MPW.
+pavlej 26.02.2025.
 ******************************************************************************************************************************************************/
-liblms8_status lms8001_pnlPLLProfiles_view::optim_PLL_LoopBW(double PM_deg, double fc, bool fitKVCO)
+liblms8_status lms8001_pnlPLLProfiles_view::optim_PLL_LoopBW_mpw2015(double PM_deg, double fc, bool fitKVCO)
 {
 	// Calculate Phase Margin in radians
 	// Calculate angle frequency for fc
@@ -893,6 +986,164 @@ liblms8_status lms8001_pnlPLLProfiles_view::optim_PLL_LoopBW(double PM_deg, doub
 		double LMS8001_R2_0 = 24.6e3;
 		double LMS8001_R3_0 = 14.9e3;
 */
+
+		bool C1_cond = (LMS8001_C1_STEP <= C1) && (C1 <= 15.0 * LMS8001_C1_STEP);
+		bool C2_cond = (LMS8001_C2_FIX <= C2) && (C2 <= LMS8001_C2_FIX + 15.0 * LMS8001_C2_STEP);
+		bool C3_cond = (LMS8001_C3_FIX + LMS8001_C3_STEP <= C3) && (C3 <= LMS8001_C3_FIX + 15.0 * LMS8001_C3_STEP);
+		bool R2_cond = (LMS8001_R2_0 / 15.0 <= R2) && (R2 <= LMS8001_R2_0);
+		bool R3_cond = (LMS8001_R3_0 / 15.0 <= R3) && (R3 <= LMS8001_R3_0);
+
+		if (C1_cond && C2_cond && C3_cond && R2_cond && R3_cond) {
+
+			int C1_CODE = int(round(C1 / LMS8001_C1_STEP));
+			int C2_CODE = int(round((C2 - LMS8001_C2_FIX) / LMS8001_C2_STEP));
+			int C3_CODE = int(round((C3 - LMS8001_C3_FIX) / LMS8001_C3_STEP));
+			C1_CODE = int(min(max(C1_CODE, 0), 15));
+			C2_CODE = int(min(max(C2_CODE, 0), 15));
+			C3_CODE = int(min(max(C3_CODE, 0), 15));
+
+			int R2_CODE = int(round(LMS8001_R2_0 / R2));
+			int R3_CODE = int(round(LMS8001_R3_0 / R3));
+			R2_CODE = min(max(R2_CODE, 1), 15);
+			R3_CODE = min(max(R3_CODE, 1), 15);
+
+			// Set CP Pulse Current to the optimized value
+			setCP(cp_pulse, OFS_INIT, ICT_CP_INIT);
+
+			// Set LPF Components to the optimized values
+			setLPF(C1_CODE, C2_CODE, R2_CODE, C3_CODE, R3_CODE);
+
+			return LIBLMS8_SUCCESS;
+		}
+	}
+
+	wxCommandEvent evt;
+	evt.SetEventType(LOG_MESSAGE);
+	evt.SetString(_("PLL LoopBW Optimization failed. Some of the LPF components out of implementable range."));
+	wxPostEvent(this, evt);
+
+	// Set back to initial settings of CP
+	setCP(PULSE_INIT, OFS_INIT, ICT_CP_INIT);
+
+	return LIBLMS8_FAILURE;
+}
+
+/*****************************************************************************************************************************************************
+This method finds optimal PLL configuration, CP pulse current and LPF element values.
+Optimization finds maximal CP current which can results with targeted PLL Loop BW using Loop - Filter elements which can be implemented in LMS8001 IC.
+Result should be PLL configuration with best phase noise performance for targeted loop bandwidth.
+Works for LMS8001 IC from 2024 MPW.
+pavlej 26.02.2025.
+******************************************************************************************************************************************************/
+liblms8_status lms8001_pnlPLLProfiles_view::optim_PLL_LoopBW_mpw2024(double PM_deg, double fc, bool fitKVCO)
+{
+	// Calculate Phase Margin in radians
+	// Calculate angle frequency for fc
+	double PM_rad = PM_deg*M_PI / 180.0;
+	double wc = 2.0*M_PI*fc;
+
+	// Get initial CP current settings
+	int PULSE_INIT = lmsControl->Get_SPI_Reg_bits(PULSE_n, true, lmsControl->channel, lmsControl->PLLprofile);
+	int OFS_INIT = lmsControl->Get_SPI_Reg_bits(OFS_n, true, lmsControl->channel, lmsControl->PLLprofile);
+	int ICT_CP_INIT = lmsControl->Get_SPI_Reg_bits(ICT_CP_n, true, lmsControl->channel, lmsControl->PLLprofile);
+
+	// Pulse control word of CP inside LMS8001 will be swept from 63 to 4.
+	// First value that gives implementable PLL configuration will be used.
+	int cp_pulse_vals[60];
+	int cp_pulse_vals_No;
+	int currindex = 0;
+	for (int i = 63; i >= 4; i-- ) {
+		cp_pulse_vals[currindex] = i;
+		currindex++;
+	}
+	cp_pulse_vals_No = currindex;
+
+//msavic start 170213 - Moved from the loop to speed up
+	// Check VCO_SEL and VCO_FREQ
+	int vco_sel = lmsControl->Get_SPI_Reg_bits(VCO_SEL_n, true, lmsControl->channel, lmsControl->PLLprofile);
+	int vco_freq = lmsControl->Get_SPI_Reg_bits(VCO_FREQ_n, true, lmsControl->channel, lmsControl->PLLprofile);
+
+	double KVCO_avg;
+
+	if (!fitKVCO) {
+		if (vco_sel == 1)
+			KVCO_avg = 6.2842e+07;
+		else if (vco_sel == 2)
+			KVCO_avg = 6.4853e+07;
+		else if (vco_sel == 3)
+			KVCO_avg = 9.1550e+07;
+		else {
+			wxCommandEvent evt;
+			evt.SetEventType(LOG_MESSAGE);
+			evt.SetString(_("Ext. LO selected in PLL_PROFILE."));
+			wxPostEvent(this, evt);
+
+			return LIBLMS8_FAILURE;
+		}
+	}
+	else {
+		// Use Fitted Values for KVCO in Calculations
+		int CBANK = vco_freq;
+		if (vco_sel == 1)
+			KVCO_avg = 3.8492e+07 * (2.1005e-10 * pow(CBANK, 4) - 3.6267e-08 * pow(CBANK, 3) + 1.3634e-05 *pow(CBANK, 2) + 3.0541e-03 * CBANK + 1.0011e+00);
+		else if (vco_sel == 2)
+			KVCO_avg = 4.4058e+07 * (6.4250e-11 * pow(CBANK, 4) + 2.1831e-10 * pow(CBANK, 3) + 5.7102e-06 *pow(CBANK, 2) + 2.6286e-03 * CBANK + 1.0011e+00);
+		else if (vco_sel == 3)
+			KVCO_avg = 6.2508e+07 * (3.7053e-11 * pow(CBANK, 4) + 6.3153e-09 * pow(CBANK, 3) + 5.6397e-06 *pow(CBANK, 2) + 2.5792e-03 * CBANK + 9.9837e-01);
+		else {
+			wxCommandEvent evt;
+			evt.SetEventType(LOG_MESSAGE);
+			evt.SetString(_("Ext. LO selected in PLL_PROFILE."));
+			wxPostEvent(this, evt);
+
+			return LIBLMS8_FAILURE;
+		}
+	}
+
+	// Read Feedback-Divider Modulus
+	double N = getNDIV();
+
+	double Kvco = 2 * M_PI*KVCO_avg;
+
+	double LMS8001_C1_STEP = 1.2e-12;
+	double LMS8001_C2_STEP = 10.0e-12;
+	double LMS8001_C3_STEP = 1.2e-12;
+	double LMS8001_C2_FIX = 150.0e-12;
+	double LMS8001_C3_FIX = 5.0e-12;
+	double LMS8001_R2_0 = 24.6e3;
+	double LMS8001_R3_0 = 14.9e3;
+
+//msavic end 170213 - Moved from the loop to speed up
+
+	for (int i = 0; i < cp_pulse_vals_No; i++) {
+		int cp_pulse = cp_pulse_vals[i];
+
+		// Read CP Current Value
+		double Icp = ICT_CP_INIT*25.0e-6 / 16.0*cp_pulse;
+
+
+		double Kphase = Icp / (2 * M_PI);
+
+		double gamma = 1.045;
+		double T31 = 0.1;
+
+		// Approx. formula, Dean Banerjee
+		double T1 = (1.0 / cos(PM_rad) - tan(PM_rad)) / (wc*(1 + T31));
+
+		double T3=T1*T31;
+		double T2=gamma/((pow(wc, 2))*(T1+T3));
+
+		double A0=(Kphase*Kvco)/((pow(wc, 2))*N)*sqrt((1+(pow(wc, 2))*(pow(T2, 2)))/((1+(pow(wc, 2))*(pow(T1, 2)))*(1+(pow(wc, 2))*(pow(T3, 2)))));
+  		double A2=A0*T1*T3;
+		double A1=A0*(T1+T3);
+
+		double C1=A2/(pow(T2, 2))*(1+sqrt(1+T2/A2*(T2*A0-A1)));
+    	double C3=(-(pow(T2, 2))*(pow(C1, 2))+T2*A1*C1-A2*A0)/((pow(T2, 2))*C1-A2);
+    	double C2=A0-C1-C3;
+    	double R2=T2/C2;
+    	double R3=A2/(C1*C3*T2);
+
+
 
 		bool C1_cond = (LMS8001_C1_STEP <= C1) && (C1 <= 15.0 * LMS8001_C1_STEP);
 		bool C2_cond = (LMS8001_C2_FIX <= C2) && (C2 <= LMS8001_C2_FIX + 15.0 * LMS8001_C2_STEP);
@@ -1160,8 +1411,10 @@ double lms8001_pnlPLLProfiles_view::getNDIV()
 
 /********************************************************************************************
 This methods configures PLL-LODIST subsystems of LMS8001 IC to generate desired LO frequency.
+Works for LMS8001 IC from 2015 MPW.
+pavlej 26.02.2025.
 *********************************************************************************************/
-liblms8_status lms8001_pnlPLLProfiles_view::setLOFREQ(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode)
+liblms8_status lms8001_pnlPLLProfiles_view::setLOFREQ_mpw2015(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode)
 {
 	int DIV2IQ = 0;
 	int FFMOD = 0;
@@ -1217,8 +1470,71 @@ liblms8_status lms8001_pnlPLLProfiles_view::setLOFREQ(double fLO, int fref, bool
 	return status;
 }
 
+/********************************************************************************************
+This methods configures PLL-LODIST subsystems of LMS8001 IC to generate desired LO frequency.
+Works for LMS8001 IC from 2024 MPW.
+pavlej 26.02.2025.
+*********************************************************************************************/
+liblms8_status lms8001_pnlPLLProfiles_view::setLOFREQ_mpw2024(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode)
+{
+	int DIV2IQ = 0;
+	int FFMOD = 0;
+
+	if (genIQ) {
+		if (!((fLO >= 293.75E6) && (fLO <= 4.85E9))) {
+			wxCommandEvent evt;
+			evt.SetEventType(LOG_MESSAGE);
+			evt.SetString(_("LO frequency should be between 293.75 MHz and 4.85 GHz, when Generate IQ is selected. Failed to set LO frequency."));
+			wxPostEvent(this, evt);
+
+			return LIBLMS8_FAILURE;
+		}
+		DIV2IQ = 1;
+	}
+	else {
+		if (!((fLO >= 293.75E6) && (fLO <= 9.7E9))) {
+			wxCommandEvent evt;
+			evt.SetEventType(LOG_MESSAGE);
+			evt.SetString(_("LO frequency should be between 293.75 MHz and 9.7 GHz. Failed to set LO frequency."));
+			wxPostEvent(this, evt);
+
+			return LIBLMS8_FAILURE;
+		}
+		if ((fLO >= 293.75E6) && (fLO <= 587.5E6)) {
+			wxCommandEvent evt;
+			evt.SetEventType(LOG_MESSAGE);
+			evt.SetString(_("LO frequency values between 293.75 MHz and 557.5 MHz can only be generated when IQ=True. Failed to set LO Freq."));
+			wxPostEvent(this, evt);
+
+			return LIBLMS8_FAILURE;
+		}
+		DIV2IQ = 0;
+	}
+
+	double fVCO = fLO*pow(2, DIV2IQ)*pow(2, FFMOD);
+	while (!((fVCO >= 4.7E9) && (fVCO <= 9.7E9))) {
+		FFMOD++;
+		fVCO = fLO*pow(2.0, DIV2IQ)*pow(2.0, FFMOD);
+	}
+
+	// Set FF - DIV Control Signals
+	setFFDIV(FFMOD);
+	liblms8_status status = vco_auto_ctune(fVCO, fref, slfbenXBUF, intMode);
+
+	if (status == LIBLMS8_FAILURE) {
+		wxCommandEvent evt;
+		evt.SetEventType(LOG_MESSAGE);
+		evt.SetString(_("Setting LO Frequency failed."));
+		wxPostEvent(this, evt);
+	}
+
+	return status;
+}
+
 /**************************************************************************************
 Performs VCO Coarse Frequency Tuning Using On-Chip LMS8001 IC Calibration State-Machine
+Works for both versions of LMS8001 IC, 2015 and 2024 MPWs
+pavlej 26.02.2025.
 ***************************************************************************************/
 
 liblms8_status lms8001_pnlPLLProfiles_view::vco_auto_ctune(double fVCO, int fref, bool slfbenXBUF, bool intMode, bool pdiv2, int vtune_vct, int vco_sel_force, int vco_sel_init, int freq_init_pos, int freq_init, int freq_settling_N, int vtune_wait_N, int vco_sel_freq_max, int vco_sel_freq_min)
@@ -1342,6 +1658,7 @@ liblms8_status lms8001_pnlPLLProfiles_view::vco_auto_ctune(double fVCO, int fref
 
 	return result;
 }
+
 
 /************************************
 Enables VCO Bias, XBUF and PLL Blocks

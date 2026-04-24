@@ -46,16 +46,22 @@ class lms8001_pnlPLLProfiles_view : public pnlPLLProfiles_view
 	void OnUpdateUI_cmbFLOCK_PULSE_n(wxUpdateUIEvent& event);
 
 	void OnTextRefClock(wxCommandEvent& event);
+	// pavlej 26.02.2025.
+	liblms8_status configPLL_mpw2024(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode, int loopBW, double pm, bool fitKVCO, double bwef, int flock_N);
+	liblms8_status configPLL_mpw2015(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode, int loopBW, double pm, bool fitKVCO, double bwef, int flock_N);
+	liblms8_status setLOFREQ_mpw2024(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode);
+	liblms8_status setLOFREQ_mpw2015(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode);
 
-	liblms8_status configPLL(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode, int loopBW, double pm, bool fitKVCO, double bwef, int flock_N);
-	liblms8_status setLOFREQ(double fLO, int fref, bool slfbenXBUF, bool genIQ, bool intMode);
 	void setFFDIV(int FFMOD);
 	liblms8_status vco_auto_ctune(double fVCO, int fref, bool slfbenXBUF, bool intMode, bool pdiv2 = false, int vtune_vct = 1, int vco_sel_force = 0, int vco_sel_init = 2, int freq_init_pos = 7, int freq_init  = 0, int freq_settling_N = 4, int vtune_wait_N = 128, int vco_sel_freq_max = 250, int vco_sel_freq_min = 5);
 	void calc_fbdiv(double fVCO, int fref, bool intMode, bool pdiv2, int* nint, int* nfrac, int* nfix);
 	void enablePLL(bool pdiv2, bool intMode, bool slfbenXBUF);
 	liblms8_status centerVTUNE2(int fref, bool slfbenXBUF);
 	double getNDIV();
-	liblms8_status optim_PLL_LoopBW(double pm, double fc, bool fitKVCO);
+	//pavlej 26.02.2025.
+	liblms8_status optim_PLL_LoopBW_mpw2024(double pm, double fc, bool fitKVCO);
+	liblms8_status optim_PLL_LoopBW_mpw2015(double pm, double fc, bool fitKVCO);
+
 	void setCP(int PULSE, int OFS, int ICT_CP);
 	void setLPF(int C1,int C2, int R2, int C3, int R3);
 	liblms8_status optimCPandLD();

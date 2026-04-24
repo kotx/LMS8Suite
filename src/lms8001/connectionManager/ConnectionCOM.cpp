@@ -491,6 +491,12 @@ IConnection::DeviceStatus ConnectionCOM::Open(const char *comName, int baudrate)
     tty.c_iflag &= ~IGNBRK;
     tty.c_lflag = 0;
     tty.c_oflag = 0;
+
+	/** pavlej, added based on Borko's bug fix in https://github.com/borisavjovanovic/LimeRFE_8001P_1v1/commit/1428573685308ac40b5da4c27294d77920c15de3**/
+	tty.c_iflag&=~(IGNCR|IUTF8);
+    tty.c_oflag&=~(ONLCR|OCRNL);
+	tty.c_iflag&=~(INLCR|ICRNL);
+	/* ------------------------------------------------------------------------------------------------------------------------------------------------**/
     tty.c_cc[VMIN] = 0; // read non blocking
     tty.c_cc[VTIME] = 5; // 0.5 seconds read timeout
 
