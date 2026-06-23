@@ -3,7 +3,7 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE TYPE INTERNAL FORCE)
 project("lms8suite")
 #include modules for finding CyAPI
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
-cmake_policy(SET CMP0015 OLD)
+cmake_policy(SET CMP0015 NEW)
 if(${CMAKE_MAJOR_VERSION} GREATER 2)
 	cmake_policy(SET CMP0043 NEW)
 endif()
@@ -32,6 +32,8 @@ add_subdirectory(ADF4002)
 include_directories(ADF4002) 
 add_subdirectory(Si5351C)
 include_directories(Si5351C)
+add_subdirectory(lms8cli)
+include_directories(lms8cli)
 
 set(BINARY_OUTPUT_DIR "${CMAKE_BINARY_DIR}/bin")
 

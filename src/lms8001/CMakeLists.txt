@@ -3,7 +3,7 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE TYPE INTERNAL FORCE)
 project("lms8api")
 #include modules for finding FFTW and CyAPI
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
-cmake_policy(SET CMP0015 OLD)
+cmake_policy(SET CMP0015 NEW)
 if(${CMAKE_MAJOR_VERSION} GREATER 2)
 	cmake_policy(SET CMP0043 NEW)
 endif()
