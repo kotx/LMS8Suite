@@ -39,7 +39,7 @@ bool connectAndConfigure(LMScomms& comms, LMS8001& lms)
         cout << "  [" << i << "] " << devices[i] << "\n";
 
     // Open first device
-    if (!comms.Open(0))
+    if (comms.Open(0) != IConnection::SUCCESS)
     {
         cerr << "ERROR: Failed to open device\n";
         return false;
